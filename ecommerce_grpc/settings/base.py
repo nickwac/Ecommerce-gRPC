@@ -6,18 +6,14 @@ This file contains settings common to all environments.
 import os
 from pathlib import Path
 from datetime import timedelta
-from environs import Env
-
-env = Env()
-env.read_env()
 
 # Build paths
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # Security
-SECRET_KEY = env.str('SECRET_KEY', 'django-insecure-change-this-in-production')
-DEBUG = env.bool('DEBUG', False)
-ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', ['localhost', '127.0.0.1'])
+SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-change-this-in-production')
+DEBUG = os.getenv('DEBUG', 'True') == 'True'
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 # Application definition
 INSTALLED_APPS = [
@@ -41,6 +37,9 @@ INSTALLED_APPS = [
     'products',
     'orders',
     'core',  # New core app for shared functionality
+    'wishlist',  # Wishlist feature
+    'cart',  # Shopping cart feature
+    'reviews',  # Product reviews & ratings
 ]
 
 MIDDLEWARE = [
@@ -79,7 +78,10 @@ WSGI_APPLICATION = 'ecommerce_grpc.wsgi.application'
 
 # Database
 DATABASES = {
-    'default': env.dj_db_url('DATABASE_URL', default='sqlite:///db.sqlite3')
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
+    }
 }
 
 # Password validation
@@ -162,17 +164,17 @@ SIMPLE_JWT = {
 }
 
 # CORS Settings
-CORS_ALLOWED_ORIGINS = env.list(
+CORS_ALLOWED_ORIGINS = os.getenv(
     'CORS_ALLOWED_ORIGINS',
-    ['http://localhost:3000', 'http://localhost:8000']
-)
+    'http://localhost:3000,http://localhost:8000'
+).split(',')
 CORS_ALLOW_CREDENTIALS = True
 
 # Cache Settings
 CACHES = {
     'default': {
         'BACKEND': 'django_redis.cache.RedisCache',
-        'LOCATION': env.str('REDIS_URL', 'redis://localhost:6379/1'),
+        'LOCATION': os.getenv('REDIS_URL', 'redis://localhost:6379/1'),
         'OPTIONS': {
             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
             'PARSER_CLASS': 'redis.connection.HiredisParser',
@@ -190,7 +192,7 @@ SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
 SESSION_CACHE_ALIAS = 'default'
 
 # Celery Settings
-CELERY_BROKER_URL = env.str('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = 'django-db'
 CELERY_CACHE_BACKEND = 'default'
 CELERY_ACCEPT_CONTENT = ['json']
@@ -213,10 +215,6 @@ LOGGING = {
         'simple': {
             'format': '{levelname} {message}',
             'style': '{',
-        },
-        'json': {
-            '()': 'pythonjsonlogger.jsonlogger.JsonFormatter',
-            'format': '%(asctime)s %(name)s %(levelname)s %(message)s'
         },
     },
     'filters': {
@@ -273,13 +271,13 @@ SPECTACULAR_SETTINGS = {
 }
 
 # gRPC Server Settings
-GRPC_PRODUCT_SERVER_HOST = env.str('GRPC_PRODUCT_SERVER_HOST', 'localhost')
-GRPC_PRODUCT_SERVER_PORT = env.int('GRPC_PRODUCT_SERVER_PORT', 50051)
-GRPC_ORDER_SERVER_HOST = env.str('GRPC_ORDER_SERVER_HOST', 'localhost')
-GRPC_ORDER_SERVER_PORT = env.int('GRPC_ORDER_SERVER_PORT', 50052)
+GRPC_PRODUCT_SERVER_HOST = os.getenv('GRPC_PRODUCT_SERVER_HOST', 'localhost')
+GRPC_PRODUCT_SERVER_PORT = int(os.getenv('GRPC_PRODUCT_SERVER_PORT', '50051'))
+GRPC_ORDER_SERVER_HOST = os.getenv('GRPC_ORDER_SERVER_HOST', 'localhost')
+GRPC_ORDER_SERVER_PORT = int(os.getenv('GRPC_ORDER_SERVER_PORT', '50052'))
 
 # Sentry (Error Tracking)
-SENTRY_DSN = env.str('SENTRY_DSN', '')
+SENTRY_DSN = os.getenv('SENTRY_DSN', '')
 if SENTRY_DSN:
     import sentry_sdk
     from sentry_sdk.integrations.django import DjangoIntegration
@@ -295,7 +293,7 @@ if SENTRY_DSN:
         ],
         traces_sample_rate=0.1,
         send_default_pii=True,
-        environment=env.str('SENTRY_ENVIRONMENT', 'development'),
+        environment=os.getenv('SENTRY_ENVIRONMENT', 'development'),
     )
 
 # Security Settings

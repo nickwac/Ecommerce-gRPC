@@ -9,9 +9,9 @@ DEBUG = True
 ALLOWED_HOSTS = ['*']
 
 # Development-specific apps
-INSTALLED_APPS += [
-    'django_extensions',
-]
+# INSTALLED_APPS += [
+#     'django_extensions',  # Optional: install with pip install django-extensions
+# ]
 
 # CORS - Allow all origins in development
 CORS_ALLOW_ALL_ORIGINS = True
