@@ -1,0 +1,193 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: ecommerce_db
+    environment:
+      POSTGRES_DB: ${DB_NAME:-ecommerce_db}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ecommerce_network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: ecommerce_redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ecommerce_network
+
+  # Product gRPC Server
+  product_grpc:
+    build:
+      context: .
+      dockerfile: Dockerfile.grpc
+    container_name: product_grpc_server
+    command: python products/grpc_server.py
+    environment:
+      - DJANGO_SETTINGS_MODULE=ecommerce_grpc.settings
+      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-ecommerce_db}
+      - REDIS_URL=redis://redis:6379/1
+    ports:
+      - "50051:50051"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - ecommerce_network
+
+  # Order gRPC Server
+  order_grpc:
+    build:
+      context: .
+      dockerfile: Dockerfile.grpc
+    container_name: order_grpc_server
+    command: python orders/grpc_server.py
+    environment:
+      - DJANGO_SETTINGS_MODULE=ecommerce_grpc.settings
+      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-ecommerce_db}
+      - REDIS_URL=redis://redis:6379/1
+    ports:
+      - "50052:50052"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - ecommerce_network
+
+  # Django Web Application
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ecommerce_web
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py collectstatic --noinput &&
+             gunicorn --bind 0.0.0.0:8000 --workers 4 --threads 2 --timeout 60 --access-logfile - --error-logfile - ecommerce_grpc.wsgi:application"
+    environment:
+      - DJANGO_SETTINGS_MODULE=ecommerce_grpc.settings
+      - DJANGO_ENV=production
+      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-ecommerce_db}
+      - REDIS_URL=redis://redis:6379/1
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - GRPC_PRODUCT_SERVER_HOST=product_grpc
+      - GRPC_ORDER_SERVER_HOST=order_grpc
+      - SECRET_KEY=${SECRET_KEY:-change-this-in-production}
+      - DEBUG=${DEBUG:-False}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      product_grpc:
+        condition: service_started
+      order_grpc:
+        condition: service_started
+    volumes:
+      - ./staticfiles:/app/staticfiles
+      - ./media:/app/media
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - ecommerce_network
+
+  # Celery Worker
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ecommerce_celery_worker
+    command: celery -A ecommerce_grpc worker -l info
+    environment:
+      - DJANGO_SETTINGS_MODULE=ecommerce_grpc.settings
+      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-ecommerce_db}
+      - REDIS_URL=redis://redis:6379/1
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - ecommerce_network
+
+  # Celery Beat (Scheduler)
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ecommerce_celery_beat
+    command: celery -A ecommerce_grpc beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    environment:
+      - DJANGO_SETTINGS_MODULE=ecommerce_grpc.settings
+      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-ecommerce_db}
+      - REDIS_URL=redis://redis:6379/1
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - ecommerce_network
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: ecommerce_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./staticfiles:/app/staticfiles:ro
+      - ./media:/app/media:ro
+    depends_on:
+      - web
+    restart: unless-stopped
+    networks:
+      - ecommerce_network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  ecommerce_network:
+    driver: bridge

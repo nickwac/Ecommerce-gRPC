@@ -1,0 +1,77 @@
+syntax = "proto3";
+
+package orders;
+
+// Order Service Definition
+service OrderService {
+    rpc CreateOrder(CreateOrderRequest) returns (OrderResponse);
+    rpc GetOrder(GetOrderRequest) returns (OrderResponse);
+    rpc ListOrders(ListOrdersRequest) returns (ListOrdersResponse);
+    rpc UpdateOrderStatus(UpdateOrderStatusRequest) returns (OrderResponse);
+    rpc CancelOrder(CancelOrderRequest) returns (OrderResponse);
+    rpc GetOrdersByCustomer(GetOrdersByCustomerRequest) returns (ListOrdersResponse);
+}
+
+// Messages
+message OrderItem {
+    int32 product_id = 1;
+    string product_name = 2;
+    int32 quantity = 3;
+    double price = 4;
+    double subtotal = 5;
+}
+
+message Order {
+    int32 id = 1;
+    string customer_name = 2;
+    string customer_email = 3;
+    repeated OrderItem items = 4;
+    double total_amount = 5;
+    string status = 6;
+    string shipping_address = 7;
+    string created_at = 8;
+    string updated_at = 9;
+}
+
+message CreateOrderRequest {
+    string customer_name = 1;
+    string customer_email = 2;
+    repeated OrderItem items = 3;
+    string shipping_address = 4;
+}
+
+message GetOrderRequest {
+    int32 id = 1;
+}
+
+message ListOrdersRequest {
+    int32 page = 1;
+    int32 page_size = 2;
+    string status = 3;
+}
+
+message ListOrdersResponse {
+    repeated Order orders = 1;
+    int32 total_count = 2;
+    int32 page = 3;
+    int32 page_size = 4;
+}
+
+message UpdateOrderStatusRequest {
+    int32 id = 1;
+    string status = 2;
+}
+
+message CancelOrderRequest {
+    int32 id = 1;
+}
+
+message GetOrdersByCustomerRequest {
+    string customer_email = 1;
+}
+
+message OrderResponse {
+    Order order = 1;
+    bool success = 2;
+    string message = 3;
+}
